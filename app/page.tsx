@@ -29,7 +29,7 @@ export default function Home() {
             <div className="rounded-lg border border-purple-500 bg-gray-800 px-4 py-2 text-xl font-bold text-white shadow-lg shadow-purple-500/20">
               {username}
             </div>
-            <ConnectWalletButton />
+            <ConnectWalletButton style={{}} />
           </div>
 
           <div className="border-4 border-white shadow-lg shadow-purple-500/50">
