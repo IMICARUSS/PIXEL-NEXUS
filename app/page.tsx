@@ -17,7 +17,7 @@ export default function Home() {
           <ConnectWalletButton style={{ marginBottom: 16 }} />
 
           <div className="border-4 border-white shadow-lg shadow-purple-500/50">
-            <GameCanvas width={800} height={600} />
+            <GameCanvas width={1200} height={800} />
           </div>
         </>
       )}
