@@ -6,7 +6,7 @@ import { io } from "socket.io-client";
 // Lazy import Phaser only on client to avoid SSR issues
 let PhaserLib = null;
 
-export default function GameCanvas({ width = 800, height = 600 }) {
+export default function GameCanvas({ width = 800, height = 600, username = "Player" }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
 
@@ -27,6 +27,7 @@ export default function GameCanvas({ width = 800, height = 600 }) {
         constructor() {
           super("boot");
           this.player = null; // our player sprite
+          this.playerNameText = null; // text object for username
           this.cursors = null; // cursor keys
           this.socket = null; // socket.io client
           this.otherPlayers = null; // Phaser physics group for other players
@@ -79,6 +80,15 @@ export default function GameCanvas({ width = 800, height = 600 }) {
           this.player = this.physics.add.sprite(w / 2, h / 2, "dude");
           this.player.setCollideWorldBounds(true);
           this.player.anims.play("turn");
+
+          // Create username text above player
+          this.playerNameText = this.add.text(this.player.x, this.player.y - 30, username, {
+            fontSize: "14px",
+            fill: "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 3,
+            align: "center",
+          }).setOrigin(0.5);
 
           // Socket.io setup (best-effort)
           try {
@@ -203,6 +213,12 @@ export default function GameCanvas({ width = 800, height = 600 }) {
             this.player.anims.play("turn");
           }
 
+          // Update username text position to follow player
+          if (this.playerNameText) {
+            this.playerNameText.x = this.player.x;
+            this.playerNameText.y = this.player.y - 30;
+          }
+
           // Emit player movement if changed since last frame
           if (this.socket) {
             const x = this.player.x;
@@ -262,7 +278,7 @@ export default function GameCanvas({ width = 800, height = 600 }) {
         gameRef.current = null;
       }
     };
-  }, [width, height]);
+  }, [width, height, username]);
 
   return (
     <div
