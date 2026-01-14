@@ -1,63 +1,49 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
+const { Server } = require("socket.io");
 
-const app = express();
-const server = http.createServer(app);
-
-// Configure CORS to allow client from http://localhost:3000
-app.use(cors({
-  origin: 'http://localhost:3000',
-}));
-
-const io = new Server(server, {
+const io = new Server(3001, {
   cors: {
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST'],
+    origin: "*", // Izinkan koneksi dari mana saja (sesuaikan untuk production)
   },
 });
 
-// In-memory players store
-const players = {};
+let players = {};
 
-io.on('connection', (socket) => {
-  // Assign initial player data
+io.on("connection", (socket) => {
+  console.log("a user connected: " + socket.id);
+
+  // Buat data pemain baru
   players[socket.id] = {
     x: 400,
     y: 300,
     playerId: socket.id,
+    rotation: 0,
+    username: "Player",
+    character: "dude", // Default character
   };
 
-  // Send current players to the newly connected client
-  socket.emit('currentPlayers', players);
+  // Kirim data pemain yang sudah ada ke pemain baru
+  socket.emit("currentPlayers", players);
 
-  // Notify all other clients about the new player
-  socket.broadcast.emit('newPlayer', players[socket.id]);
+  // Beritahu pemain lain bahwa ada pemain baru
+  socket.broadcast.emit("newPlayer", players[socket.id]);
 
-  // Handle player movement updates
-  socket.on('playerMovement', (movementData) => {
-    if (!players[socket.id]) return;
-
-    const { x, y } = movementData || {};
-    if (typeof x === 'number') players[socket.id].x = x;
-    if (typeof y === 'number') players[socket.id].y = y;
-
-    // Broadcast the player's new position to other clients
-    socket.broadcast.emit('playerMoved', players[socket.id]);
-  });
-
-  // Handle disconnects
-  socket.on('disconnect', () => {
-    // Remove player and notify others
+  socket.on("disconnect", () => {
+    console.log("user disconnected: " + socket.id);
     delete players[socket.id];
-    socket.broadcast.emit('disconnect', socket.id);
+    io.emit("disconnect", socket.id);
+  });
+
+  socket.on("playerMovement", (movementData) => {
+    if (players[socket.id]) {
+      players[socket.id].x = movementData.x;
+      players[socket.id].y = movementData.y;
+      players[socket.id].rotation = movementData.rotation;
+      if (movementData.username) players[socket.id].username = movementData.username;
+      if (movementData.character) players[socket.id].character = movementData.character;
+
+      socket.broadcast.emit("playerMoved", players[socket.id]);
+    }
   });
 });
 
-const PORT = 3001;
-server.listen(PORT, () => {
-  console.log(`Socket.io server running on http://localhost:${PORT}`);
-});
-
-module.exports = { app, server, io, players };
+console.log("Socket.IO server running on port 3001");

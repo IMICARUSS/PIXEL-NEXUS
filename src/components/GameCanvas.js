@@ -6,7 +6,7 @@ import { io } from "socket.io-client";
 // Lazy import Phaser only on client to avoid SSR issues
 let PhaserLib = null;
 
-export default function GameCanvas({ width = 800, height = 600, username = "Player" }) {
+export default function GameCanvas({ width = 800, height = 600, username = "Player", character = "dude" }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
 
@@ -35,40 +35,46 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
         }
 
         preload() {
-          // Load spritesheet from public path
-          this.load.spritesheet("dude", "/dude.png", {
-            frameWidth: 32,
-            frameHeight: 48,
+          // Load spritesheets for all characters
+          // Pastikan file Elvis.png dan Elton.png ada di folder public dan ukurannya sesuai (misal 32x48)
+          const chars = ["dude", "Elvis", "Elton"];
+          chars.forEach((char) => {
+            this.load.spritesheet(char, `/${char}.png`, {
+              frameWidth: 32,
+              frameHeight: 48,
+            });
           });
         }
 
         create() {
           const { width: w, height: h } = this.scale;
 
-          // Create animations once
-          if (!this.anims.get("left")) {
-            this.anims.create({
-              key: "left",
-              frames: this.anims.generateFrameNumbers("dude", { start: 0, end: 3 }),
-              frameRate: 10,
-              repeat: -1,
-            });
-          }
-          if (!this.anims.get("turn")) {
-            this.anims.create({
-              key: "turn",
-              frames: [{ key: "dude", frame: 4 }],
-              frameRate: 20,
-            });
-          }
-          if (!this.anims.get("right")) {
-            this.anims.create({
-              key: "right",
-              frames: this.anims.generateFrameNumbers("dude", { start: 5, end: 8 }),
-              frameRate: 10,
-              repeat: -1,
-            });
-          }
+          // Create animations for each character
+          ["dude", "Elvis", "Elton"].forEach((char) => {
+            if (!this.anims.get(`left-${char}`)) {
+              this.anims.create({
+                key: `left-${char}`,
+                frames: this.anims.generateFrameNumbers(char, { start: 0, end: 3 }),
+                frameRate: 10,
+                repeat: -1,
+              });
+            }
+            if (!this.anims.get(`turn-${char}`)) {
+              this.anims.create({
+                key: `turn-${char}`,
+                frames: [{ key: char, frame: 4 }],
+                frameRate: 20,
+              });
+            }
+            if (!this.anims.get(`right-${char}`)) {
+              this.anims.create({
+                key: `right-${char}`,
+                frames: this.anims.generateFrameNumbers(char, { start: 5, end: 8 }),
+                frameRate: 10,
+                repeat: -1,
+              });
+            }
+          });
 
           // Capture cursor keys
           this.cursors = this.input.keyboard.createCursorKeys();
@@ -77,9 +83,9 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           this.otherPlayers = this.physics.add.group();
 
           // Always create our local player immediately so single-player works even if socket fails
-          this.player = this.physics.add.sprite(w / 2, h / 2, "dude");
+          this.player = this.physics.add.sprite(w / 2, h / 2, character);
           this.player.setCollideWorldBounds(true);
-          this.player.anims.play("turn");
+          this.player.anims.play(`turn-${character}`);
 
           // Create username text above player
           this.playerNameText = this.add.text(this.player.x, this.player.y - 30, username, {
@@ -91,8 +97,9 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           }).setOrigin(0.5);
 
           // Socket.io setup (best-effort)
+          const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
           try {
-            this.socket = io("http://localhost:3001");
+            this.socket = io(socketUrl);
           } catch (_) {
             this.socket = null; // offline fallback
           }
@@ -106,6 +113,8 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
                 x: this.player.x,
                 y: this.player.y,
                 rotation: this.player.rotation || 0,
+                username: username,
+                character: character, // Kirim karakter kita ke server
               });
             });
 
@@ -139,6 +148,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
               // Find in group and remove
               this.otherPlayers.getChildren().forEach((other) => {
                 if (other.playerId === playerId) {
+                  if (other.nameText) other.nameText.destroy();
                   other.destroy();
                 }
               });
@@ -151,6 +161,21 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
                   other.setPosition(playerInfo.x, playerInfo.y);
                   if (typeof playerInfo.rotation === "number") {
                     other.rotation = playerInfo.rotation;
+                  }
+                  // Update text position
+                  if (other.nameText) {
+                    other.nameText.setPosition(other.x, other.y - 30);
+                  }
+                  // Update username text if not exists (for late joiners)
+                  if (playerInfo.username && !other.nameText) {
+                    const otherText = this.add.text(other.x, other.y - 30, playerInfo.username, {
+                      fontSize: "14px",
+                      fill: "#ffffff",
+                      stroke: "#000000",
+                      strokeThickness: 3,
+                      align: "center",
+                    }).setOrigin(0.5);
+                    other.nameText = otherText;
                   }
                 }
               });
@@ -167,12 +192,24 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
 
         // Helper: add other player sprite (red tint)
         addOtherPlayer(playerInfo) {
-          const other = this.physics.add.sprite(playerInfo.x, playerInfo.y, "dude");
-          other.setTint(0xff0000);
+          const spriteKey = playerInfo.character || "dude"; // Fallback ke dude jika tidak ada info
+          const other = this.physics.add.sprite(playerInfo.x, playerInfo.y, spriteKey);
           other.playerId = playerInfo.playerId;
           other.setImmovable(true);
           other.body.allowGravity = false;
           this.otherPlayers.add(other);
+
+          // Add username text for other players
+          if (playerInfo.username) {
+            const otherText = this.add.text(other.x, other.y - 30, playerInfo.username, {
+              fontSize: "14px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            }).setOrigin(0.5);
+            other.nameText = otherText;
+          }
           return other;
         }
 
@@ -194,10 +231,10 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           // Horizontal movement + animation
           if (leftDown) {
             this.player.setVelocityX(-speedX);
-            this.player.anims.play("left", true);
+            this.player.anims.play(`left-${character}`, true);
           } else if (rightDown) {
             this.player.setVelocityX(speedX);
-            this.player.anims.play("right", true);
+            this.player.anims.play(`right-${character}`, true);
           }
 
           // Vertical movement (doesn't change animation per requirement)
@@ -210,7 +247,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           // Idle: no keys pressed -> stop and play 'turn'
           if (!leftDown && !rightDown && !upDown && !downDown) {
             this.player.setVelocity(0, 0);
-            this.player.anims.play("turn");
+            this.player.anims.play(`turn-${character}`);
           }
 
           // Update username text position to follow player
@@ -278,7 +315,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
         gameRef.current = null;
       }
     };
-  }, [width, height, username]);
+  }, [width, height, username, character]);
 
   return (
     <div
