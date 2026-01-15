@@ -6,6 +6,14 @@ import { io } from "socket.io-client";
 // Lazy import Phaser only on client to avoid SSR issues
 let PhaserLib = null;
 
+/**
+ * @param {Object} props
+ * @param {number} [props.width]
+ * @param {number} [props.height]
+ * @param {string} [props.username]
+ * @param {string} [props.character]
+ * @param {string|null} [props.walletAddress]
+ */
 export default function GameCanvas({ width = 800, height = 600, username = "Player", character = "dude", walletAddress = null }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
