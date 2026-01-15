@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import ConnectWalletButton from "../src/components/ConnectWalletButton";
-import IntroModal from "../src/components/IntroModal";
 import GameCanvas from "../src/components/GameCanvas.js";
+import { io } from "socket.io-client";
 
 export default function Home() {
   const [introCompleted, setIntroCompleted] = useState(false);
@@ -11,35 +11,139 @@ export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [character, setCharacter] = useState("dude");
   const [isEditingName, setIsEditingName] = useState(false);
+  
+  // Intro Flow State
+  // 0: Connect Wallet
+  // 1: Checking Profile (Loading)
+  // 2: New Player (Input Username)
+  // 3: Registered Player (Ready to Enter)
+  const [introStep, setIntroStep] = useState(0);
+
+  // Callback untuk sinkronisasi data dari server (savegame) ke UI
+  const handlePlayerDataLoaded = useCallback((data: { username?: string; character?: string }) => {
+    if (data.username) setUsername(data.username);
+    if (data.character) setCharacter(data.character);
+  }, []);
+
+  // Handle wallet connection during intro
+  useEffect(() => {
+    if (!introCompleted && walletAddress) {
+      setIntroStep(1); // Move to checking
+      
+      // Connect temp socket to check profile
+      const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+      const tempSocket = io(socketUrl);
+
+      tempSocket.on("connect", () => {
+        tempSocket.emit("checkProfile", { walletAddress });
+      });
+
+      tempSocket.on("profileCheckResult", (data: { exists: boolean, username?: string }) => {
+        if (data.exists && data.username) {
+          // Registered Player
+          setUsername(data.username);
+          setIntroStep(3); // Go to "Enter Nexus" directly
+        } else {
+          // New Player
+          setIntroStep(2); // Go to "Input Username"
+        }
+        tempSocket.disconnect();
+      });
+
+      return () => {
+        tempSocket.disconnect();
+      };
+    } else if (!walletAddress && !introCompleted) {
+      setIntroStep(0); // Reset if wallet disconnected
+    }
+  }, [walletAddress, introCompleted]);
+
+  const handleEnterNexus = () => {
+    if (!username.trim()) return alert("Please enter a username");
+    
+    // Randomize character for new session if not loaded from DB yet
+    // (GameCanvas will overwrite this if save data exists, but good for initial render)
+    const chars = ["dude", "Elvis", "Elton"];
+    const randomChar = chars[Math.floor(Math.random() * chars.length)];
+    setCharacter(randomChar);
+    
+    setIntroCompleted(true);
+  };
 
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center bg-gray-900 p-4">
       {!introCompleted ? (
-        <IntroModal
-          onComplete={(data: any) => {
-            // IntroModal mengembalikan object { username, pubkey }, kita ambil username-nya saja
-            if (typeof data === "object" && data !== null && data.username) {
-              setUsername(data.username);
-              if (data.pubkey) {
-                setWalletAddress(data.pubkey);
-              }
-            } else {
-              setUsername(data);
-            }
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border-4 border-purple-500 bg-gray-900 p-8 shadow-[0_0_50px_rgba(168,85,247,0.5)] text-center">
+            <h1 className="mb-8 text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 drop-shadow-sm uppercase">
+              PIXEL NEXUS
+            </h1>
 
-            // Randomize character: dude, Elvis, or Elton
-            const chars = ["dude", "Elvis", "Elton"];
-            const randomChar = chars[Math.floor(Math.random() * chars.length)];
-            setCharacter(randomChar);
-            setIntroCompleted(true);
-          }}
-        />
+            {introStep === 0 && (
+              <div className="space-y-6">
+                <p className="text-gray-300">Connect your wallet to begin your journey.</p>
+                <ConnectWalletButton style={{ width: "100%" }} onWalletConnected={setWalletAddress} autoConnect={false} />
+              </div>
+            )}
+
+            {introStep === 1 && (
+              <div className="flex flex-col items-center justify-center space-y-4 py-8">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-500 border-t-transparent"></div>
+                <p className="text-purple-300 font-bold animate-pulse">Checking Identity...</p>
+              </div>
+            )}
+
+            {introStep === 2 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="text-left">
+                  <label className="mb-2 block text-sm font-bold text-purple-300">NEW IDENTITY DETECTED</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Enter your username..."
+                    className="w-full rounded-lg border-2 border-purple-500 bg-gray-800 p-3 text-white placeholder-gray-500 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all"
+                    maxLength={15}
+                  />
+                </div>
+                <button
+                  onClick={handleEnterNexus}
+                  className="w-full rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 py-3 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:shadow-purple-500/50 active:scale-95"
+                >
+                  ENTER THE NEXUS
+                </button>
+              </div>
+            )}
+
+            {introStep === 3 && (
+              <div className="space-y-6 animate-in fade-in zoom-in duration-500">
+                <div className="rounded-lg bg-purple-900/30 border border-purple-500/30 p-4">
+                  <p className="text-gray-400 text-sm uppercase tracking-widest mb-1">Welcome Back</p>
+                  <p className="text-2xl font-black text-white drop-shadow-md">{username}</p>
+                </div>
+                <button
+                  onClick={handleEnterNexus}
+                  className="w-full rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 py-3 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:shadow-green-500/50 active:scale-95"
+                >
+                  CONTINUE TO NEXUS
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <>
           <div className="flex items-start gap-8">
             {/* Game Canvas (Left) */}
             <div className="border-4 border-white shadow-lg shadow-purple-500/50">
-              <GameCanvas width={800} height={600} username={username} character={character} walletAddress={walletAddress} />
+              <GameCanvas 
+                width={800} 
+                height={600} 
+                username={username} 
+                character={character} 
+                walletAddress={walletAddress}
+                onPlayerDataLoaded={handlePlayerDataLoaded}
+              />
             </div>
 
             {/* Right Side: Token Ownership UI */}

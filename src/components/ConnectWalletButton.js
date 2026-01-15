@@ -1,148 +1,79 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 export default function ConnectWalletButton({ style, onWalletConnected }) {
-  const [hasPhantom, setHasPhantom] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [pubkey, setPubkey] = useState(null);
-  const [showHint, setShowHint] = useState(false);
+  const [walletAddress, setWalletAddress] = useState(null);
+  const [showOptions, setShowOptions] = useState(false);
 
-  const provider = useMemo(() => (typeof window !== 'undefined' ? window.solana : null), []);
+  const updateWallet = useCallback((addr) => {
+    setWalletAddress(addr);
+    if (onWalletConnected) onWalletConnected(addr);
+  }, [onWalletConnected]);
 
-  useEffect(() => {
-    if (!provider) {
-      console.warn('[Phantom] window.solana provider not detected');
-      setHasPhantom(false);
-      return;
-    }
+  const connect = async (providerName) => {
+    if (typeof window === 'undefined') return;
 
-    const isPhantom = !!provider?.isPhantom;
-    setHasPhantom(isPhantom);
-    console.log('[Phantom] provider detected. isPhantom =', isPhantom);
-
-    // Try auto-connect if already authorized
-    provider
-      ?.connect?.({ onlyIfTrusted: true })
-      .then((res) => {
-        const key = res?.publicKey?.toString?.() ?? provider?.publicKey?.toString?.();
-        if (key) {
-          console.log('[Phantom] auto-connected with key:', key);
-          setPubkey(key);
-          if (onWalletConnected) onWalletConnected(key);
+    let address = null;
+    try {
+      if (providerName === 'Phantom') {
+        // Cek provider Phantom (support window.phantom.solana dan window.solana)
+        const provider = window.phantom?.solana || window.solana;
+        if (!provider) {
+          window.open('https://phantom.app/', '_blank');
+          return;
         }
-      })
-      .catch((e) => console.log('[Phantom] auto-connect skipped:', e?.message ?? e));
+        const resp = await provider.connect();
+        address = resp.publicKey.toString();
 
-    const onConnect = (pk) => {
-      const key = pk?.toString?.() ?? provider?.publicKey?.toString?.() ?? null;
-      console.log('[Phantom] connect event received:', key);
-      setPubkey(key);
-      setConnecting(false);
-      setShowHint(false);
-      if (onWalletConnected) onWalletConnected(key);
-    };
+      } else if (providerName === 'Metamask') {
+        const provider = window.ethereum;
+        if (!provider) {
+          window.open('https://metamask.io/', '_blank');
+          return;
+        }
+        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+        address = accounts[0]; // EVM address
 
-    const onDisconnect = () => {
-      console.log('[Phantom] disconnect event received');
-      setPubkey(null);
-      setConnecting(false);
-      setShowHint(false);
-      if (onWalletConnected) onWalletConnected(null);
-    };
+      } else if (providerName === 'Solflare') {
+        const provider = window.solflare;
+        if (!provider) {
+          window.open('https://solflare.com/', '_blank');
+          return;
+        }
+        await provider.connect();
+        address = provider.publicKey.toString();
+      }
 
-    const onAccountChanged = (newPk) => {
-      const key = newPk ? newPk.toString() : null;
-      console.log('[Phantom] accountChanged:', key);
-      setPubkey(key);
-      if (onWalletConnected) onWalletConnected(key);
-    };
-
-    provider?.on?.('connect', onConnect);
-    provider?.on?.('disconnect', onDisconnect);
-    provider?.on?.('accountChanged', onAccountChanged);
-
-    return () => {
-      provider?.off?.('connect', onConnect);
-      provider?.off?.('disconnect', onDisconnect);
-      provider?.off?.('accountChanged', onAccountChanged);
-    };
-  }, [provider, onWalletConnected]);
-
-  // Show a hint if connecting takes more than 5s
-  useEffect(() => {
-    if (!connecting) {
-      setShowHint(false);
-      return;
+      if (address) {
+        updateWallet(address);
+        setShowOptions(false);
+      }
+    } catch (err) {
+      console.error("Connection Error:", err);
+      // Jangan tampilkan alert jika user menolak (error code 4001)
+      if (err.code !== 4001) {
+        alert("Failed to connect to " + providerName + ": " + (err.message || err));
+      }
     }
-    const t = setTimeout(() => setShowHint(true), 5000);
-    return () => clearTimeout(t);
-  }, [connecting]);
+  };
 
-  const onConnect = useCallback(async () => {
-    if (!provider || !provider.isPhantom) {
-      console.warn('[Phantom] provider not available or not Phantom');
-      return;
-    }
+  const disconnect = useCallback(() => {
+    // Attempt to disconnect if provider supports it
     try {
-      console.log('[Phantom] calling provider.connect()');
-      setConnecting(true);
-      const res = await provider.connect();
-      const key = res?.publicKey?.toString?.() ?? provider?.publicKey?.toString?.() ?? null;
-      console.log('[Phantom] connect resolved with key:', key);
-      setPubkey(key);
-      setConnecting(false);
-      setShowHint(false);
-      if (onWalletConnected) onWalletConnected(key);
+      if (window.solana?.isPhantom) window.solana.disconnect();
+      if (window.solflare) window.solflare.disconnect();
     } catch (e) {
-      console.error('[Phantom] connect error:', e);
-      setConnecting(false);
-      setShowHint(false);
-      alert('Phantom connect error: ' + (e?.message ?? e));
+      // ignore errors
     }
-  }, [provider]);
-
-  const onDisconnect = useCallback(async () => {
-    if (!provider || !provider.isPhantom) return;
-    try {
-      console.log('[Phantom] calling provider.disconnect()');
-      await provider.disconnect();
-      console.log('[Phantom] disconnect resolved');
-      setPubkey(null);
-      if (onWalletConnected) onWalletConnected(null);
-    } catch (e) {
-      console.error('[Phantom] disconnect error:', e);
-      alert('Phantom disconnect error: ' + (e?.message ?? e));
-    }
-  }, [provider]);
-
-  if (!hasPhantom) {
-    return (
-      <a
-        href="https://phantom.app/"
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          color: '#fff',
-          background: '#6d28d9',
-          border: 'none',
-          borderRadius: 8,
-          padding: '10px 16px',
-          cursor: 'pointer',
-          textDecoration: 'none',
-          ...style,
-        }}
-      >
-        Install Phantom Wallet
-      </a>
-    );
-  }
+    updateWallet(null);
+  }, [updateWallet]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {pubkey ? (
+      {walletAddress ? (
         <button
-          onClick={onDisconnect}
+          onClick={disconnect}
           style={{
             color: '#111827',
             background: '#a78bfa',
@@ -152,33 +83,59 @@ export default function ConnectWalletButton({ style, onWalletConnected }) {
             cursor: 'pointer',
             ...style,
           }}
-          title={pubkey}
+          title={walletAddress}
         >
-          Disconnect ({pubkey.slice(0, 4)}...{pubkey.slice(-4)})
+          Disconnect ({walletAddress.slice(0, 4)}...{walletAddress.slice(-4)})
         </button>
       ) : (
-        <button
-          onClick={onConnect}
-          disabled={connecting}
-          style={{
-            color: '#fff',
-            background: connecting ? '#4c1d95' : '#6d28d9',
-            border: 'none',
-            borderRadius: 8,
-            padding: '10px 16px',
-            cursor: connecting ? 'not-allowed' : 'pointer',
-            ...style,
-          }}
-        >
-          {connecting ? 'Connecting…' : 'Connect Phantom Wallet'}
-        </button>
-      )}
-
-      {connecting && showHint && (
-        <div style={{ marginTop: 8, maxWidth: 420, color: '#d1d5db', fontSize: 12, textAlign: 'center' }}>
-          If no Phantom prompt appears, click the Phantom extension icon in your browser toolbar to approve the connection.
-          You may also need to enable the extension in this window or exit Private/Incognito mode.
-        </div>
+        <>
+          {!showOptions ? (
+            <button
+              onClick={() => setShowOptions(true)}
+              style={{
+                color: '#fff',
+                background: '#6d28d9',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 16px',
+                cursor: 'pointer',
+                ...style,
+              }}
+            >
+              Connect Wallet
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+              <button 
+                onClick={() => connect('Phantom')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: '#AB9FF2', color: '#fff', padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                <img src="/phantom.png" alt="Phantom" width="24" height="24" />
+                Phantom
+              </button>
+              <button 
+                onClick={() => connect('Metamask')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: '#F6851B', color: '#fff', padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                <img src="/metamask.png" alt="Metamask" width="24" height="24" />
+                Metamask
+              </button>
+              <button 
+                onClick={() => connect('Solflare')}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: '#FC7226', color: '#fff', padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                <img src="/solflare.png" alt="Solflare" width="24" height="24" />
+                Solflare
+              </button>
+              <button 
+                onClick={() => setShowOptions(false)}
+                style={{ background: 'transparent', color: '#ccc', padding: '5px', border: 'none', cursor: 'pointer', fontSize: '12px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

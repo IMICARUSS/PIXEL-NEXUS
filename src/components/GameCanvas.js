@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
 // Lazy import Phaser only on client to avoid SSR issues
@@ -13,10 +13,18 @@ let PhaserLib = null;
  * @param {string} [props.username]
  * @param {string} [props.character]
  * @param {string|null} [props.walletAddress]
+ * @param {function} [props.onPlayerDataLoaded]
  */
-export default function GameCanvas({ width = 800, height = 600, username = "Player", character = "dude", walletAddress = null }) {
+export default function GameCanvas({ width = 800, height = 600, username = "Player", character = "dude", walletAddress = null, onPlayerDataLoaded }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // Use ref for username to avoid game restarts on name change and handle sync properly
+  const usernameRef = useRef(username);
+  useEffect(() => {
+    usernameRef.current = username;
+  }, [username]);
 
   useEffect(() => {
     let phaserGame = null;
@@ -38,7 +46,6 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           this.playerNameText = null; // text object for username
           this.cursors = null; // cursor keys
           this.socket = null; // socket.io client
-          this.otherPlayers = null; // Phaser physics group for other players
           this.oldPosition = { x: null, y: null, rotation: null }; // track last sent position
         }
 
@@ -87,9 +94,6 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           // Capture cursor keys
           this.cursors = this.input.keyboard.createCursorKeys();
 
-          // Group for other players
-          this.otherPlayers = this.physics.add.group();
-
           // Always create our local player immediately so single-player works even if socket fails
           this.player = this.physics.add.sprite(w / 2, h / 2, character);
           this.player.setScale(2);
@@ -117,8 +121,10 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
             // On successful connection, tag our playerId
             this.socket.on("connect", () => {
               this.player.playerId = this.socket.id;
+              setIsConnected(true);
               
               // JOIN GAME: Kirim identitas kita (termasuk wallet untuk load save data)
+              console.log("Sending joinGame with wallet:", walletAddress); // Debug log
               this.socket.emit("joinGame", {
                 walletAddress: walletAddress,
                 username: username,
@@ -126,6 +132,15 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
                 x: this.player.x,
                 y: this.player.y,
               });
+            });
+
+            this.socket.on("disconnect", () => {
+              setIsConnected(false);
+            });
+            
+            this.socket.on("connect_error", (err) => {
+              console.error("Socket connection error:", err);
+              setIsConnected(false);
             });
 
             // Current players data received on connect
@@ -136,63 +151,19 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
                 // LOAD SAVE DATA: Update posisi dan karakter lokal sesuai database server
                 this.player.setPosition(self.x, self.y);
                 // Jika karakter di save data berbeda dengan default, kita bisa update animasinya di sini
-                // (Opsional: memerlukan logika ganti tekstur dinamis jika karakter berubah)
-                if (self.username) this.playerNameText.setText(self.username);
-              }
-              // Add others
-              Object.keys(players).forEach((id) => {
-                if (id === this.socket.id) return; // skip ourselves
-                const p = players[id];
-                // Only add if not already present
-                const exists = this.otherPlayers.getChildren().some((o) => o.playerId === p.playerId);
-                if (!exists) this.addOtherPlayer(p);
-              });
-            });
-
-            // A new player joined
-            this.socket.on("newPlayer", (playerInfo) => {
-              if (playerInfo.playerId !== this.socket.id) {
-                const exists = this.otherPlayers.getChildren().some((o) => o.playerId === playerInfo.playerId);
-                if (!exists) this.addOtherPlayer(playerInfo);
-              }
-            });
-
-            // A player disconnected
-            this.socket.on("disconnect", (playerId) => {
-              // Find in group and remove
-              this.otherPlayers.getChildren().forEach((other) => {
-                if (other.playerId === playerId) {
-                  if (other.nameText) other.nameText.destroy();
-                  other.destroy();
+                if (self.username) {
+                  this.playerNameText.setText(self.username);
+                  // Update ref immediately to prevent update() loop from reverting it
+                  usernameRef.current = self.username;
                 }
-              });
-            });
 
-            // Another player moved
-            this.socket.on("playerMoved", (playerInfo) => {
-              this.otherPlayers.getChildren().forEach((other) => {
-                if (other.playerId === playerInfo.playerId) {
-                  other.setPosition(playerInfo.x, playerInfo.y);
-                  if (typeof playerInfo.rotation === "number") {
-                    other.rotation = playerInfo.rotation;
-                  }
-                  // Update text position
-                  if (other.nameText) {
-                    other.nameText.setPosition(other.x, other.y - 50);
-                  }
-                  // Update username text if not exists (for late joiners)
-                  if (playerInfo.username && !other.nameText) {
-                    const otherText = this.add.text(other.x, other.y - 50, playerInfo.username, {
-                      fontSize: "14px",
-                      fill: "#ffffff",
-                      stroke: "#000000",
-                      strokeThickness: 3,
-                      align: "center",
-                    }).setOrigin(0.5);
-                    other.nameText = otherText;
-                  }
+                // SYNC TO PARENT: Beritahu React bahwa data profil telah dimuat dari server
+                if (onPlayerDataLoaded) {
+                  // Kita kirim data balik agar UI (seperti panel My Holdings) terupdate
+                  // dengan username/karakter yang tersimpan di database.
+                  onPlayerDataLoaded({ username: self.username, character: self.character });
                 }
-              });
+              }
             });
 
             // Cleanup socket when scene shuts down/restarts
@@ -202,30 +173,6 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
               } catch (_) {}
             });
           }
-        }
-
-        // Helper: add other player sprite (red tint)
-        addOtherPlayer(playerInfo) {
-          const spriteKey = playerInfo.character || "dude"; // Fallback ke dude jika tidak ada info
-          const other = this.physics.add.sprite(playerInfo.x, playerInfo.y, spriteKey);
-          other.setScale(2);
-          other.playerId = playerInfo.playerId;
-          other.setImmovable(true);
-          other.body.allowGravity = false;
-          this.otherPlayers.add(other);
-
-          // Add username text for other players
-          if (playerInfo.username) {
-            const otherText = this.add.text(other.x, other.y - 50, playerInfo.username, {
-              fontSize: "14px",
-              fill: "#ffffff",
-              stroke: "#000000",
-              strokeThickness: 3,
-              align: "center",
-            }).setOrigin(0.5);
-            other.nameText = otherText;
-          }
-          return other;
         }
 
         update() {
@@ -272,10 +219,10 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           }
 
           // Listen to username updates from parent component (React)
-          if (this.playerNameText.text !== username) {
-             this.playerNameText.setText(username);
+          if (this.playerNameText.text !== usernameRef.current) {
+             this.playerNameText.setText(usernameRef.current);
              // Emit update to server
-             if (this.socket) this.socket.emit("updateProfile", { username });
+             if (this.socket) this.socket.emit("updateProfile", { username: usernameRef.current });
           }
 
           // Emit player movement if changed since last frame
@@ -337,7 +284,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
         gameRef.current = null;
       }
     };
-  }, [width, height, username, character, walletAddress]);
+  }, [width, height, character, walletAddress, onPlayerDataLoaded]); // Removed username from deps
 
   return (
     <div
@@ -348,6 +295,23 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
         display: "inline-block",
         lineHeight: 0,
       }}
-    />
+    >
+      {/* Connection Status Indicator */}
+      <div style={{
+        position: "absolute",
+        top: 10,
+        left: 10,
+        padding: "4px 8px",
+        backgroundColor: isConnected ? "rgba(0, 255, 0, 0.5)" : "rgba(255, 0, 0, 0.7)",
+        color: "#fff",
+        borderRadius: "4px",
+        fontSize: "12px",
+        fontWeight: "bold",
+        pointerEvents: "none", // Agar klik tembus ke canvas
+        zIndex: 10
+      }}>
+        {isConnected ? "🟢 ONLINE" : "🔴 OFFLINE (Check Server)"}
+      </div>
+    </div>
   );
 }
