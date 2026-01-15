@@ -82,7 +82,7 @@ export default function Home() {
             {introStep === 0 && (
               <div className="space-y-6">
                 <p className="text-gray-300">Connect your wallet to begin your journey.</p>
-                <ConnectWalletButton style={{ width: "100%" }} onWalletConnected={setWalletAddress} autoConnect={false} />
+                <ConnectWalletButton style={{ width: "100%" }} onWalletConnected={setWalletAddress} />
               </div>
             )}
 
