@@ -6,7 +6,7 @@ import { io } from "socket.io-client";
 // Lazy import Phaser only on client to avoid SSR issues
 let PhaserLib = null;
 
-export default function GameCanvas({ width = 800, height = 600, username = "Player", character = "dude" }) {
+export default function GameCanvas({ width = 800, height = 600, username = "Player", character = "dude", walletAddress = null }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
 
@@ -109,13 +109,14 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
             // On successful connection, tag our playerId
             this.socket.on("connect", () => {
               this.player.playerId = this.socket.id;
-              // Optionally sync our current position to the server
-              this.socket.emit("playerMovement", {
+              
+              // JOIN GAME: Kirim identitas kita (termasuk wallet untuk load save data)
+              this.socket.emit("joinGame", {
+                walletAddress: walletAddress,
+                username: username,
+                character: character,
                 x: this.player.x,
                 y: this.player.y,
-                rotation: this.player.rotation || 0,
-                username: username,
-                character: character, // Kirim karakter kita ke server
               });
             });
 
@@ -124,7 +125,11 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
               // If server already knows about us, update our pos to stay consistent
               const self = players[this.socket.id];
               if (self && this.player) {
+                // LOAD SAVE DATA: Update posisi dan karakter lokal sesuai database server
                 this.player.setPosition(self.x, self.y);
+                // Jika karakter di save data berbeda dengan default, kita bisa update animasinya di sini
+                // (Opsional: memerlukan logika ganti tekstur dinamis jika karakter berubah)
+                if (self.username) this.playerNameText.setText(self.username);
               }
               // Add others
               Object.keys(players).forEach((id) => {
@@ -258,6 +263,13 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
             this.playerNameText.y = this.player.y - 50;
           }
 
+          // Listen to username updates from parent component (React)
+          if (this.playerNameText.text !== username) {
+             this.playerNameText.setText(username);
+             // Emit update to server
+             if (this.socket) this.socket.emit("updateProfile", { username });
+          }
+
           // Emit player movement if changed since last frame
           if (this.socket) {
             const x = this.player.x;
@@ -317,7 +329,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
         gameRef.current = null;
       }
     };
-  }, [width, height, username, character]);
+  }, [width, height, username, character, walletAddress]);
 
   return (
     <div

@@ -10,6 +10,7 @@ export default function Home() {
   const [username, setUsername] = useState("");
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [character, setCharacter] = useState("dude");
+  const [isEditingName, setIsEditingName] = useState(false);
 
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center bg-gray-900 p-4">
@@ -38,7 +39,7 @@ export default function Home() {
           <div className="flex items-start gap-8">
             {/* Game Canvas (Left) */}
             <div className="border-4 border-white shadow-lg shadow-purple-500/50">
-              <GameCanvas width={800} height={600} username={username} character={character} />
+              <GameCanvas width={800} height={600} username={username} character={character} walletAddress={walletAddress} />
             </div>
 
             {/* Right Side: Token Ownership UI */}
@@ -52,8 +53,29 @@ export default function Home() {
                   {walletAddress ? (
                     <div className="flex flex-col gap-2 rounded-lg bg-gray-700/50 p-3 border border-gray-600 shadow-inner hover:border-purple-400 transition-colors">
                       {/* Username Display */}
-                      <div className="mb-2 border-b border-gray-600/50 pb-2">
-                        <span className="text-xl font-black text-white tracking-wide drop-shadow-md">{username}</span>
+                      <div className="mb-2 border-b border-gray-600/50 pb-2 flex justify-between items-center">
+                        {isEditingName ? (
+                          <div className="flex gap-2 w-full">
+                            <input 
+                              type="text" 
+                              value={username} 
+                              onChange={(e) => setUsername(e.target.value)}
+                              className="w-full bg-gray-900 text-white px-2 py-1 rounded border border-purple-500 focus:outline-none"
+                              autoFocus
+                            />
+                            <button 
+                              onClick={() => setIsEditingName(false)}
+                              className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs font-bold"
+                            >
+                              OK
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-xl font-black text-white tracking-wide drop-shadow-md truncate max-w-[200px]">{username}</span>
+                            <button onClick={() => setIsEditingName(true)} className="text-xs text-gray-400 hover:text-white underline">Edit</button>
+                          </>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-between">
