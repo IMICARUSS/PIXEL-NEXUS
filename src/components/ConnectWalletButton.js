@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 
-export default function ConnectWalletButton({ style }) {
+export default function ConnectWalletButton({ style, onWalletConnected }) {
   const [hasPhantom, setHasPhantom] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [pubkey, setPubkey] = useState(null);
@@ -29,6 +29,7 @@ export default function ConnectWalletButton({ style }) {
         if (key) {
           console.log('[Phantom] auto-connected with key:', key);
           setPubkey(key);
+          if (onWalletConnected) onWalletConnected(key);
         }
       })
       .catch((e) => console.log('[Phantom] auto-connect skipped:', e?.message ?? e));
@@ -39,6 +40,7 @@ export default function ConnectWalletButton({ style }) {
       setPubkey(key);
       setConnecting(false);
       setShowHint(false);
+      if (onWalletConnected) onWalletConnected(key);
     };
 
     const onDisconnect = () => {
@@ -46,12 +48,14 @@ export default function ConnectWalletButton({ style }) {
       setPubkey(null);
       setConnecting(false);
       setShowHint(false);
+      if (onWalletConnected) onWalletConnected(null);
     };
 
     const onAccountChanged = (newPk) => {
       const key = newPk ? newPk.toString() : null;
       console.log('[Phantom] accountChanged:', key);
       setPubkey(key);
+      if (onWalletConnected) onWalletConnected(key);
     };
 
     provider?.on?.('connect', onConnect);
@@ -63,7 +67,7 @@ export default function ConnectWalletButton({ style }) {
       provider?.off?.('disconnect', onDisconnect);
       provider?.off?.('accountChanged', onAccountChanged);
     };
-  }, [provider]);
+  }, [provider, onWalletConnected]);
 
   // Show a hint if connecting takes more than 5s
   useEffect(() => {
@@ -89,6 +93,7 @@ export default function ConnectWalletButton({ style }) {
       setPubkey(key);
       setConnecting(false);
       setShowHint(false);
+      if (onWalletConnected) onWalletConnected(key);
     } catch (e) {
       console.error('[Phantom] connect error:', e);
       setConnecting(false);
@@ -104,6 +109,7 @@ export default function ConnectWalletButton({ style }) {
       await provider.disconnect();
       console.log('[Phantom] disconnect resolved');
       setPubkey(null);
+      if (onWalletConnected) onWalletConnected(null);
     } catch (e) {
       console.error('[Phantom] disconnect error:', e);
       alert('Phantom disconnect error: ' + (e?.message ?? e));
