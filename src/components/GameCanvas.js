@@ -84,11 +84,12 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
 
           // Always create our local player immediately so single-player works even if socket fails
           this.player = this.physics.add.sprite(w / 2, h / 2, character);
+          this.player.setScale(2);
           this.player.setCollideWorldBounds(true);
           this.player.anims.play(`turn-${character}`);
 
           // Create username text above player
-          this.playerNameText = this.add.text(this.player.x, this.player.y - 30, username, {
+          this.playerNameText = this.add.text(this.player.x, this.player.y - 50, username, {
             fontSize: "14px",
             fill: "#ffffff",
             stroke: "#000000",
@@ -164,11 +165,11 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
                   }
                   // Update text position
                   if (other.nameText) {
-                    other.nameText.setPosition(other.x, other.y - 30);
+                    other.nameText.setPosition(other.x, other.y - 50);
                   }
                   // Update username text if not exists (for late joiners)
                   if (playerInfo.username && !other.nameText) {
-                    const otherText = this.add.text(other.x, other.y - 30, playerInfo.username, {
+                    const otherText = this.add.text(other.x, other.y - 50, playerInfo.username, {
                       fontSize: "14px",
                       fill: "#ffffff",
                       stroke: "#000000",
@@ -194,6 +195,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
         addOtherPlayer(playerInfo) {
           const spriteKey = playerInfo.character || "dude"; // Fallback ke dude jika tidak ada info
           const other = this.physics.add.sprite(playerInfo.x, playerInfo.y, spriteKey);
+          other.setScale(2);
           other.playerId = playerInfo.playerId;
           other.setImmovable(true);
           other.body.allowGravity = false;
@@ -201,7 +203,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
 
           // Add username text for other players
           if (playerInfo.username) {
-            const otherText = this.add.text(other.x, other.y - 30, playerInfo.username, {
+            const otherText = this.add.text(other.x, other.y - 50, playerInfo.username, {
               fontSize: "14px",
               fill: "#ffffff",
               stroke: "#000000",
@@ -253,7 +255,7 @@ export default function GameCanvas({ width = 800, height = 600, username = "Play
           // Update username text position to follow player
           if (this.playerNameText) {
             this.playerNameText.x = this.player.x;
-            this.playerNameText.y = this.player.y - 30;
+            this.playerNameText.y = this.player.y - 50;
           }
 
           // Emit player movement if changed since last frame
